@@ -240,7 +240,7 @@ curl http://localhost:18081/simulate/memory
 서비스 URL은 `k6/.env` 파일로 관리합니다 (git 제외).
 
 ```bash
-# 1. 환경 설정 (최초 1회)
+# 환경 설정 (최초 1회)
 cp k6/.env.example k6/.env
 # k6/.env 에서 실제 URL 수정 (localhost 또는 도메인)
 ```
@@ -260,6 +260,10 @@ REVIEW_SERVICE=http://localhost:18084
 # REVIEW_SERVICE=https://review.yourdomain.com
 ```
 
+> `.env`가 없으면 localhost 기본값으로 동작합니다.
+
+### Linux / macOS (bash)
+
 ```bash
 # 정상 플로우 (로그인 → 상품 조회 → 장바구니 → 주문 → 리뷰)
 bash k6/run-01-normal-flow.sh
@@ -269,14 +273,30 @@ bash k6/run-02-error-spike.sh
 
 # 메모리 부하 → HighMemoryUsage 알람 재현 (기본: PRODUCT_SERVICE)
 bash k6/run-03-memory-load.sh
-# 다른 서비스 지정 (인자 우선)
-bash k6/run-03-memory-load.sh http://localhost:18082
+bash k6/run-03-memory-load.sh http://localhost:18082   # 다른 서비스 지정
 
 # 레이턴시 스파이크 → HighLatency 알람 재현
 bash k6/run-04-latency-spike.sh
 ```
 
-> `.env`가 없으면 localhost 기본값으로 동작합니다.
+### Windows (PowerShell)
+
+```powershell
+# 정상 플로우
+.\k6\run-01-normal-flow.ps1
+
+# 에러 스파이크 → IstioHigh5xxErrorRate 알람 재현
+.\k6\run-02-error-spike.ps1
+
+# 메모리 부하 → HighMemoryUsage 알람 재현 (기본: PRODUCT_SERVICE)
+.\k6\run-03-memory-load.ps1
+.\k6\run-03-memory-load.ps1 http://localhost:18082   # 다른 서비스 지정
+
+# 레이턴시 스파이크 → HighLatency 알람 재현
+.\k6\run-04-latency-spike.ps1
+```
+
+> PowerShell 실행 정책 오류 시: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 ---
 
