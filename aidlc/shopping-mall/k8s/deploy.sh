@@ -50,6 +50,18 @@ kubectl apply -f monitoring/prometheus.yaml
 kubectl apply -f monitoring/loki.yaml
 kubectl apply -f monitoring/grafana.yaml
 
+# AlertManager (Secret이 있을 때만 배포)
+if kubectl get secret alertmanager-config -n shopping-mall &>/dev/null; then
+  echo "AlertManager Secret 감지 — AlertManager 배포..."
+  kubectl apply -f monitoring/alertmanager.yaml
+else
+  echo "[선택] AlertManager를 배포하려면:"
+  echo "  cp base/alertmanager-secret.yaml.example base/alertmanager-secret.yaml"
+  echo "  # Slack Webhook URL / 채널 수정 후"
+  echo "  kubectl apply -f base/alertmanager-secret.yaml"
+  echo "  kubectl apply -f monitoring/alertmanager.yaml"
+fi
+
 echo ""
 echo "=== 배포 완료 ==="
 echo "Pod 상태 확인: kubectl get pods -n shopping-mall"

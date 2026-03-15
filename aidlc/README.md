@@ -142,6 +142,7 @@ cd aidlc\shopping-mall\k8s
 kubectl port-forward svc/shop-frontend 13000:13000 -n shopping-mall
 kubectl port-forward svc/grafana 13001:13001 -n shopping-mall
 kubectl port-forward svc/prometheus 19090:19090 -n shopping-mall
+kubectl port-forward svc/alertmanager 19093:19093 -n shopping-mall
 ```
 
 접속 URL (port-forward 후):
@@ -151,6 +152,26 @@ kubectl port-forward svc/prometheus 19090:19090 -n shopping-mall
 | 쇼핑몰 | http://localhost:13000 |
 | Grafana | http://localhost:13001 (admin / admin) |
 | Prometheus | http://localhost:19090 |
+| AlertManager | http://localhost:19093 |
+
+### AlertManager (Slack 알람) 설정 — Kubernetes
+
+AlertManager는 Secret이 존재할 때만 `deploy.sh` / `deploy.ps1`에서 자동 배포됩니다.
+
+```bash
+# 1. Secret 파일 생성
+cp k8s/base/alertmanager-secret.yaml.example k8s/base/alertmanager-secret.yaml
+
+# 2. alertmanager-secret.yaml 에서 Webhook URL과 채널명 수정
+# slack_api_url: 'https://hooks.slack.com/services/실제URL'
+# channel: '#원하는채널명'
+
+# 3. Secret 적용 + AlertManager 배포
+kubectl apply -f k8s/base/alertmanager-secret.yaml
+kubectl apply -f k8s/monitoring/alertmanager.yaml
+```
+
+> `alertmanager-secret.yaml`은 `.gitignore`에 등록되어 커밋되지 않습니다.
 
 k8s 환경에서 백엔드 API를 직접 테스트하려면:
 

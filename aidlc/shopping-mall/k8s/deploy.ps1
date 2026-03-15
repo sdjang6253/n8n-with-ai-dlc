@@ -52,6 +52,19 @@ kubectl apply -f "$ScriptDir\monitoring\prometheus.yaml"
 kubectl apply -f "$ScriptDir\monitoring\loki.yaml"
 kubectl apply -f "$ScriptDir\monitoring\grafana.yaml"
 
+# AlertManager (Secret이 있을 때만 배포)
+$amSecret = kubectl get secret alertmanager-config -n shopping-mall 2>$null
+if ($amSecret) {
+  Write-Host "AlertManager Secret 감지 — AlertManager 배포..." -ForegroundColor Yellow
+  kubectl apply -f "$ScriptDir\monitoring\alertmanager.yaml"
+} else {
+  Write-Host "[선택] AlertManager를 배포하려면:" -ForegroundColor DarkYellow
+  Write-Host "  cp base\alertmanager-secret.yaml.example base\alertmanager-secret.yaml"
+  Write-Host "  # Slack Webhook URL / 채널 수정 후"
+  Write-Host "  kubectl apply -f base\alertmanager-secret.yaml"
+  Write-Host "  kubectl apply -f monitoring\alertmanager.yaml"
+}
+
 Write-Host ""
 Write-Host "=== 배포 완료 ===" -ForegroundColor Green
 Write-Host "Pod 상태 확인: kubectl get pods -n shopping-mall"
