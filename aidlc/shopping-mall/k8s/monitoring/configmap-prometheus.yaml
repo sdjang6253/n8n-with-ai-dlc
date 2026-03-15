@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: shopping-mall
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager:19093']
+    rule_files:
+      - "rules/alerts.yml"
+    scrape_configs:
+      - job_name: 'shop-user'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['shop-user:18083']
+      - job_name: 'shop-product'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['shop-product:18081']
+      - job_name: 'shop-order'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['shop-order:18082']
+      - job_name: 'shop-review'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['shop-review:18084']
+  alerts.yml: |
+    groups:
+      - name: shopping-mall-alerts
+        rules:
+          - alert: IstioHigh5xxErrorRate
+            expr: >
+              sum(rate(http_server_requests_seconds_count{status=~"5.."}[1m])) by (job)
+              / sum(rate(http_server_requests_seconds_count[1m])) by (job) > 0.1
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High 5xx error rate detected"
+              description: "Service {{ $labels.job }} 5xx error rate above 10%"
+          - alert: HighMemoryUsage
+            expr: >
+              jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High JVM heap memory usage"
+              description: "Service {{ $labels.job }} heap usage above 85%"
+          - alert: HighLatency
+            expr: >
+              histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[1m])) by (le, job)) > 2
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High HTTP response latency"
+              description: "Service {{ $labels.job }} p99 above 2000ms"

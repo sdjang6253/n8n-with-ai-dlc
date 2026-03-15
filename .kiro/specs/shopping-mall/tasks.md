@@ -1,0 +1,341 @@
+# Implementation Plan: Shopping Mall
+
+## Overview
+
+Docker Compose 기반 마이크로서비스 쇼핑몰 구현 계획입니다.
+인프라 구성 → 백엔드 서비스 → 프론트엔드 → 모니터링 → 알람 시뮬레이션 → 부하 테스트 순으로 진행합니다.
+
+## Tasks
+
+- [x] 1. Docker Compose 인프라 기반 구성
+  - `docker-compose.yml` 작성: MySQL, Zookeeper, Kafka, Prometheus, Loki, Grafana 포함
+  - 서비스 기동 순서 `depends_on` + `healthcheck`로 제어 (MySQL → Zookeeper → Kafka → Backend → Frontend)
+  - MySQL `docker-entrypoint-initdb.d/` 에 `01-schema.sql`, `02-seed.sql` 마운트
+  - Grafana `provisioning/datasources/datasources.yml` 에 Prometheus, Loki 자동 프로비저닝
+  - Prometheus `prometheus.yml` scrape 설정 (15s interval, 4개 서비스)
+  - Loki `loki-config.yml` 기본 설정
+  - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 15.1, 15.2_
+
+
+- [x] 2. MySQL 스키마 및 초기 데이터 작성
+  - [x] 2.1 `mysql/init/01-schema.sql` 작성
+    - `shop_user` DB: `users` 테이블
+    - `shop_product` DB: `categories`, `products` 테이블
+    - `shop_order` DB: `carts`, `orders`, `order_items` 테이블
+    - `shop_review` DB: `reviews` 테이블 (product_id 인덱스 포함)
+    - _Requirements: 11.2_
+  - [x] 2.2 `mysql/init/02-seed.sql` 작성
+    - 더미 유저 5개 이상 (bcrypt 해시 비밀번호)
+    - 카테고리 4개 (의류, 전자기기, 식품, 생활용품)
+    - 더미 상품 20개 이상 (picsum.photos URL, 카테고리별 5개 이상)
+    - 더미 주문 내역 (orders, order_items)
+    - _Requirements: 1.5, 3.5, 3.6, 6.7_
+
+- [x] 3. shop-user 서비스 구현 (Spring Boot, port 18083)
+  - [x] 3.1 프로젝트 구조 및 공통 설정
+    - Spring Boot 3.x 프로젝트 생성 (Java 17)
+    - 의존성: Spring Web, Spring Security, Spring Data JPA, MySQL Driver, Actuator, Micrometer Prometheus, jjwt, logstash-logback-encoder, jqwik
+    - `application.yml`: DB 연결, JWT secret, 만료시간(24h), Actuator 노출 설정
+    - `logback-spring.xml`: JSON 출력 (logstash-logback-encoder), timestamp/level/service/traceId/message 필드
+    - HTTP 요청 인터셉터: MDC에 traceId(UUID) 삽입
+    - _Requirements: 9.1, 9.2_
+  - [x] 3.2 회원가입 API 구현
+    - `POST /auth/register`: 이메일 중복 검증, bcrypt 해시 저장
+    - 입력 검증: 이메일 형식, 비밀번호 8자 이상
+    - 에러 응답: 409 (이메일 중복), 400 (유효성 실패, 필드별 메시지)
+    - _Requirements: 1.1, 1.2, 1.3, 1.4_
+  - [x]* 3.3 Property 1 테스트: 이메일 중복 등록 거부
+    - **Property 1: 이메일 중복 등록 거부**
+    - **Validates: Requirements 1.1, 1.3**
+  - [x]* 3.4 Property 2 테스트: 비밀번호 bcrypt 해시 저장
+    - **Property 2: 비밀번호 bcrypt 해시 저장**
+    - **Validates: Requirements 1.2**
+  - [x]* 3.5 Property 3 테스트: 유효하지 않은 입력 거부
+    - **Property 3: 유효하지 않은 입력 거부 (이메일 형식, 비밀번호 8자 미만)**
+    - **Validates: Requirements 1.4**
+  - [x] 3.6 로그인 및 JWT 발급 API 구현
+    - `POST /auth/login`: 자격증명 검증, JWT 발급 (userId, email 클레임, 24h 만료)
+    - Spring Security Filter Chain: JWT 검증 필터 (실패 시 401)
+    - 에러 응답: 401 (자격증명 불일치, 유효하지 않은 JWT)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+  - [x]* 3.7 Property 4 테스트: JWT 발급 라운드 트립
+    - **Property 4: JWT 발급 라운드 트립 (userId, email 클레임, 24h 만료)**
+    - **Validates: Requirements 2.1, 2.3, 2.4**
+  - [x]* 3.8 Property 5 테스트: 인증 실패 시 401 반환
+    - **Property 5: 잘못된 자격증명 또는 유효하지 않은 JWT → 401**
+    - **Validates: Requirements 2.2, 2.5**
+  - [x] 3.9 Actuator 메트릭 노출 설정
+    - `/actuator/prometheus` 엔드포인트 활성화
+    - JVM, HTTP 요청 수/응답시간/상태코드 메트릭 포함
+    - _Requirements: 8.1, 8.3_
+  - [x]* 3.10 단위 테스트: 초기 데이터 및 에지 케이스
+    - 더미 유저 5개 이상 존재 여부 검증
+    - `/actuator/prometheus` 엔드포인트 응답 검증
+    - _Requirements: 1.5, 8.1_
+
+
+- [x] 4. Checkpoint - shop-user 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 5. shop-product 서비스 구현 (Spring Boot, port 18081)
+  - [x] 5.1 프로젝트 구조 및 공통 설정
+    - Spring Boot 3.x 프로젝트 생성 (Java 17), 의존성 구성 (shop-user와 동일 스택)
+    - `application.yml`, `logback-spring.xml`, traceId MDC 인터셉터
+    - _Requirements: 9.1, 9.2_
+  - [x] 5.2 상품 목록 조회 API 구현
+    - `GET /products`: 페이지네이션(기본 20개), 카테고리 필터, 키워드 검색 (상품명/설명)
+    - 응답 필드: id, name, price, category, stock, imageUrl
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.6_
+  - [x]* 5.3 Property 6 테스트: 상품 목록 페이지네이션
+    - **Property 6: 반환 상품 수 ≤ page size (기본 20개)**
+    - **Validates: Requirements 3.1**
+  - [x]* 5.4 Property 7 테스트: 카테고리 필터링 정확성
+    - **Property 7: 반환된 모든 상품의 카테고리 = 요청 카테고리**
+    - **Validates: Requirements 3.2**
+  - [x]* 5.5 Property 8 테스트: 키워드 검색 정확성
+    - **Property 8: 반환된 모든 상품의 이름 또는 설명에 키워드 포함**
+    - **Validates: Requirements 3.3**
+  - [x] 5.6 상품 상세 조회 및 재고 차감 API 구현
+    - `GET /products/:id`: 상품 상세 (404 처리, 재고 0 시 품절 상태)
+    - `PUT /products/:id/stock`: 재고 차감 (Order_Service 내부 호출용)
+    - _Requirements: 4.1, 4.2, 4.3, 6.2_
+  - [x]* 5.7 Property 9 테스트: 상품 응답 필드 완전성
+    - **Property 9: 상품 객체에 id, name, price, category, stock, imageUrl 모두 포함**
+    - **Validates: Requirements 3.4, 4.1**
+  - [x]* 5.8 단위 테스트: 에지 케이스
+    - 존재하지 않는 상품 ID → 404
+    - 재고 0인 상품 품절 상태 표시
+    - 더미 상품 20개 이상 존재 여부
+    - _Requirements: 4.2, 4.3, 3.5_
+  - [x] 5.9 Actuator 메트릭 노출 설정
+    - `/actuator/prometheus` 엔드포인트 활성화
+    - _Requirements: 8.1, 8.3_
+
+- [x] 6. Checkpoint - shop-product 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 7. shop-order 서비스 구현 (Spring Boot, port 18082)
+  - [x] 7.1 프로젝트 구조 및 공통 설정
+    - Spring Boot 3.x 프로젝트 생성 (Java 17)
+    - 추가 의존성: Spring Kafka, RestTemplate/WebClient (Product_Service 호출)
+    - `application.yml`: DB, JWT secret, Kafka bootstrap-servers, Product_Service URL
+    - `logback-spring.xml`, traceId MDC 인터셉터
+    - JWT 검증 필터 (shop-user와 동일 shared secret)
+    - _Requirements: 9.1, 9.2, 12.1_
+  - [x] 7.2 장바구니 API 구현
+    - `GET /cart`: 장바구니 조회 (Product_Service에서 최신 가격/재고 반영)
+    - `POST /cart/items`: 상품 추가 (중복 시 수량 합산, 재고 초과 시 400)
+    - `PUT /cart/items/:productId`: 수량 변경
+    - `DELETE /cart/items/:productId`: 상품 삭제
+    - 비인증 요청 401 처리
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 12.2_
+  - [x]* 7.3 Property 10 테스트: 장바구니 추가 라운드 트립
+    - **Property 10: 추가 후 조회 시 상품 포함 및 합계 금액 정확성**
+    - **Validates: Requirements 5.1, 5.5**
+  - [x]* 7.4 Property 11 테스트: 장바구니 수량 변경 반영
+    - **Property 11: 수량 변경 후 조회 시 변경된 수량 반영**
+    - **Validates: Requirements 5.3**
+  - [x]* 7.5 Property 12 테스트: 장바구니 삭제 후 미포함
+    - **Property 12: 삭제 후 조회 시 해당 상품 미포함**
+    - **Validates: Requirements 5.4**
+  - [x]* 7.6 Property 22 테스트: 장바구니 조회 시 최신 상품 정보 반영
+    - **Property 22: 장바구니 조회 시 가격/재고가 Product_Service 현재 값과 일치**
+    - **Validates: Requirements 12.2**
+  - [x] 7.7 주문 API 구현
+    - `POST /orders`: 장바구니 → 주문 생성 (상태: "주문완료"), Product_Service 재고 차감, 장바구니 비우기
+    - `GET /orders`: 주문 내역 최신순 조회 (orderId, createdAt, status, totalPrice, items)
+    - 재고 부족 시 409, Product_Service 다운 시 503
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 7.3, 12.1, 12.3_
+  - [x]* 7.8 Property 13 테스트: 주문 생성 상태 및 응답 필드
+    - **Property 13: 응답에 orderId, items, totalPrice, createdAt 포함, 상태 "주문완료"**
+    - **Validates: Requirements 6.1, 6.3**
+  - [x]* 7.9 Property 14 테스트: 주문 후 재고 차감
+    - **Property 14: 주문 성공 후 각 상품 재고 = 이전 재고 - 주문 수량**
+    - **Validates: Requirements 6.2, 12.1**
+  - [x]* 7.10 Property 15 테스트: 주문 완료 후 장바구니 비우기
+    - **Property 15: 주문 완료 후 해당 사용자 장바구니 비어 있음**
+    - **Validates: Requirements 6.4**
+  - [x]* 7.11 Property 16 테스트: 주문 내역 최신순 정렬 및 필드 완전성
+    - **Property 16: 주문 목록 최신순 정렬, 각 주문에 orderId/createdAt/status/totalPrice/items 포함**
+    - **Validates: Requirements 7.1, 7.2**
+  - [x] 7.12 리뷰 작성 API 및 Kafka Producer 구현
+    - `POST /reviews`: 구매 이력 확인 후 `review-created` 토픽에 이벤트 발행 (202 Accepted)
+    - 이벤트 스키마: userId, productId, orderId, rating, content, createdAt
+    - 에러 처리: 401 (비인증), 403 (구매 이력 없음), 400 (평점 범위 외, 내용 비어있거나 500자 초과), 503 (Kafka 다운)
+    - Kafka producer 재시도 설정 (retries: 3)
+    - _Requirements: 13.1, 13.2, 13.4, 13.5, 13.6, 13.7, 15.4, 15.6_
+  - [x]* 7.13 단위 테스트: 에지 케이스
+    - 구매 이력 없는 사용자 리뷰 작성 → 403
+    - 평점 범위 외 값 (0, 6) → 400
+    - 재고 초과 수량 장바구니 추가 → 400
+    - 더미 주문 내역 존재 여부
+    - _Requirements: 13.4, 13.5, 5.7, 6.7_
+  - [x] 7.14 Actuator 메트릭 노출 설정
+    - `/actuator/prometheus` 엔드포인트 활성화
+    - _Requirements: 8.1, 8.3_
+
+
+- [x] 8. Checkpoint - shop-order 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. shop-review 서비스 구현 (Spring Boot, port 18084)
+  - [x] 9.1 프로젝트 구조 및 공통 설정
+    - Spring Boot 3.x 프로젝트 생성 (Java 17)
+    - 추가 의존성: Spring Kafka (consumer)
+    - `application.yml`: DB, Kafka bootstrap-servers, consumer group 설정
+    - `logback-spring.xml`, traceId MDC 인터셉터
+    - _Requirements: 9.1, 9.2, 15.5_
+  - [x] 9.2 Kafka Consumer 및 리뷰 저장 구현
+    - `ReviewEventConsumer`: `review-created` 토픽 구독, 이벤트 수신 시 DB 저장
+    - _Requirements: 13.3, 15.5_
+  - [x] 9.3 리뷰 조회 API 구현
+    - `GET /reviews?productId={id}`: 최신순 정렬, 페이지네이션(기본 20개)
+    - 응답 필드: reviewId, userId, rating, content, createdAt
+    - 존재하지 않는 상품 ID → 빈 목록 + 200
+    - _Requirements: 14.1, 14.2, 14.3, 14.4_
+  - [x]* 9.4 Property 20 테스트: Kafka 리뷰 이벤트 라운드 트립
+    - **Property 20: 리뷰 작성 → Kafka produce → consume → DB 저장 → 조회 시 포함**
+    - **Validates: Requirements 13.1, 13.2, 13.3**
+  - [x]* 9.5 Property 21 테스트: 리뷰 목록 최신순 정렬 및 페이지네이션
+    - **Property 21: 최신순 정렬, 각 리뷰에 reviewId/userId/rating/content/createdAt 포함, 반환 수 ≤ 20**
+    - **Validates: Requirements 14.1, 14.2, 14.3**
+  - [x]* 9.6 단위 테스트: 에지 케이스
+    - 존재하지 않는 상품 ID 리뷰 조회 → 빈 목록 + 200
+    - `/actuator/prometheus` 엔드포인트 응답 검증
+    - _Requirements: 14.4, 16.1_
+  - [x] 9.7 Actuator 메트릭 노출 설정
+    - `/actuator/prometheus` 엔드포인트 활성화
+    - _Requirements: 16.1, 16.2_
+
+- [x] 10. Checkpoint - shop-review 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 11. shop-frontend 구현 (React + Vite, port 13000)
+  - [x] 11.1 프로젝트 구조 및 API 클라이언트 설정
+    - Vite + React 프로젝트 생성
+    - `src/api/`: axios 클라이언트 4개 (userApi, productApi, orderApi, reviewApi) - 각 서비스 baseURL 설정
+    - JWT localStorage 저장 및 `Authorization: Bearer <token>` 헤더 자동 삽입 인터셉터
+    - _Requirements: 2.6, 12.4, 14.5_
+  - [x] 11.2 인증 페이지 구현
+    - `/login`: 로그인 폼 → JWT 발급 및 localStorage 저장
+    - `/register`: 회원가입 폼 → 필드별 에러 메시지 표시
+    - _Requirements: 1.4, 2.1, 2.6_
+  - [x] 11.3 상품 목록 및 상세 페이지 구현
+    - `/`: 상품 목록 (카테고리 필터, 키워드 검색, 페이지네이션)
+    - `/products/:id`: 상품 상세 (품절 상태 표시) + 리뷰 목록 (Review_Service 직접 호출)
+    - _Requirements: 3.1, 3.2, 3.3, 4.3, 14.5_
+  - [x] 11.4 장바구니 및 주문 페이지 구현
+    - `/cart`: 장바구니 목록, 수량 변경, 삭제, 합계 금액, 주문하기 버튼
+    - `/orders`: 주문 내역 목록 (최신순)
+    - _Requirements: 5.1, 5.3, 5.4, 5.5, 6.1, 7.1_
+  - [x] 11.5 리뷰 작성 UI 구현
+    - 상품 상세 페이지에 리뷰 작성 폼 (평점 1~5, 내용 최대 500자)
+    - 구매 이력 없음(403), 비인증(401) 에러 메시지 표시
+    - _Requirements: 13.1, 13.5, 13.6, 13.7_
+  - [x] 11.6 Dockerfile 작성
+    - Multi-stage build (Node.js build → nginx serve)
+    - _Requirements: 11.1_
+
+
+- [x] 12. 모니터링 연동 완성
+  - [x] 12.1 Prometheus scrape 설정 완성
+    - `prometheus/prometheus.yml`: 4개 서비스 scrape job 추가 (15s interval)
+    - `prometheus/rules/alerts.yml`: IstioHigh5xxErrorRate, HighMemoryUsage, HighLatency 알람 규칙 작성
+    - _Requirements: 8.2, 10.13, 10.14, 10.15_
+  - [x]* 12.2 Property 17 테스트: JSON 로그 형식 및 필드 완전성
+    - **Property 17: 로그 항목 JSON 파싱 가능, timestamp/level/service/traceId/message 필드 포함**
+    - **Validates: Requirements 9.1, 9.2**
+  - [x]* 12.3 Property 18 테스트: 동일 요청 내 traceId 일관성
+    - **Property 18: 하나의 HTTP 요청이 여러 서비스를 거칠 때 동일 traceId**
+    - **Validates: Requirements 9.5**
+  - [x] 12.4 Loki 로그 수집 설정
+    - `loki/loki-config.yml` 완성
+    - Docker Compose에 Promtail 또는 Docker log driver 설정으로 JSON 로그 수집
+    - 각 서비스 컨테이너 로그를 `service` 레이블로 구분
+    - _Requirements: 9.3, 9.4, 16.3, 16.4_
+  - [x] 12.5 Grafana 대시보드 프로비저닝
+    - `grafana/provisioning/datasources/datasources.yml`: Prometheus, Loki 데이터소스
+    - 기본 대시보드 JSON: JVM 메트릭, HTTP 요청 수/응답시간, 로그 탐색 패널
+    - _Requirements: 8.4, 9.4, 11.4_
+
+- [x] 13. 알람 시뮬레이션 엔드포인트 구현 (4개 서비스)
+  - [x] 13.1 shop-user SimulateController 구현
+    - `GET /simulate/error`: HTTP 500 반환
+    - `GET /simulate/slow`: 3000ms 이상 지연 후 응답
+    - `GET /simulate/memory`: 대용량 객체 메모리 할당 후 응답
+    - _Requirements: 10.4, 10.5, 10.6_
+  - [x] 13.2 shop-product SimulateController 구현
+    - `GET /simulate/error`, `/simulate/slow`, `/simulate/memory`
+    - _Requirements: 10.1, 10.2, 10.3_
+  - [x] 13.3 shop-order SimulateController 구현
+    - `GET /simulate/error`, `/simulate/slow`, `/simulate/memory`
+    - _Requirements: 10.7, 10.8, 10.9_
+  - [x] 13.4 shop-review SimulateController 구현
+    - `GET /simulate/error`, `/simulate/slow`, `/simulate/memory`
+    - _Requirements: 10.10, 10.11, 10.12_
+  - [x]* 13.5 Property 19 테스트: 알람 시뮬레이션 엔드포인트 동작
+    - **Property 19: /simulate/error → HTTP 500, /simulate/slow → 3000ms 이상 지연**
+    - **Validates: Requirements 10.1-10.12**
+
+- [x] 14. Checkpoint - 모니터링 및 시뮬레이션 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 15. k6 부하 테스트 스크립트 작성
+  - [x] 15.1 `k6/lib/auth.js` 작성
+    - 로그인 헬퍼 함수: JWT 발급 및 반환
+  - [x] 15.2 `k6/scenarios/01-normal-flow.js` 작성
+    - 전체 쇼핑 플로우 (로그인 → 상품 조회 → 장바구니 → 주문 → 리뷰)
+    - stages: 30s 워밍업(10 VUs) → 1m 유지 → 30s 쿨다운
+    - thresholds: 에러율 1% 미만, p95 응답시간 1초 미만
+    - _Requirements: 전체 플로우 검증_
+  - [x] 15.3 `k6/scenarios/02-error-spike.js` 작성
+    - 70% 정상 요청 + 30% `/simulate/error` 혼합
+    - 예상 알람: IstioHigh5xxErrorRate
+    - _Requirements: 10.13_
+  - [x] 15.4 `k6/scenarios/03-memory-load.js` 작성
+    - `SERVICE` 환경변수로 대상 서비스 지정
+    - `/simulate/memory` 반복 호출 (0.5s 간격)
+    - 예상 알람: HighMemoryUsage
+    - _Requirements: 10.14_
+  - [x] 15.5 `k6/scenarios/04-latency-spike.js` 작성
+    - 60% 정상 요청 + 40% `/simulate/slow` 혼합
+    - 예상 알람: HighLatency
+    - _Requirements: 10.15_
+
+- [x] 16. Final Checkpoint - 전체 통합 검증
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 17. 더미 데이터 교체 및 UI 테마 개선
+  - [x] 17.1 `mysql/init/02-seed.sql` 더미 상품 데이터 교체
+    - 실제 한국 쇼핑몰 스타일 상품명/가격으로 교체 (구조 유지, 값만 변경)
+    - 의류 5개, 전자기기 5개, 식품 5개, 생활용품 5개
+    - `SET NAMES utf8mb4` 추가로 한글 인코딩 문제 해결
+    - _Requirements: 3.5, 3.7_
+  - [x] 17.2 프론트엔드 하늘색 테마 적용
+    - `App.jsx`: 네비게이션 바 하늘색 배경 + 흰색 텍스트, 전체 배경 연한 하늘색
+    - `ProductList.jsx`, `ProductDetail.jsx`, `Cart.jsx`, `Orders.jsx`, `Login.jsx`, `Register.jsx` 전체 하늘색 테마 적용
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
+
+- [x] 18. Grafana 대시보드 패널 추가
+  - [x] 18.1 JVM G1 Eden Space Usage % 패널 추가 (id=5, percentunit, y=16 좌)
+    - Minor GC마다 리셋되는 톱니 패턴 확인용
+  - [x] 18.2 JVM G1 Old Gen Usage % 패널 추가 (id=6, percentunit, y=16 우)
+    - threshold: orange=0.7, red=0.85 (메모리 누수 감지용)
+  - [x] 18.3 Service Logs (Loki) 패널 추가 (id=7, y=24, 전체 너비)
+    - `{job=~"shop-user|shop-product|shop-order|shop-review"}` 쿼리
+  - [x] 18.4 대시보드 uid를 `shopping-mall-v2`로 업데이트 (Grafana DB 캐시 강제 갱신)
+
+- [x] 19. k6 정상 흐름 테스트 안정화
+  - [x] 19.1 VU별 계정 분산 (alice~eve 5개 계정, `__VU` 인덱스 활용)
+    - race condition 방지: 동일 계정 장바구니 공유 문제 해결
+  - [x] 19.2 재고 있는 상품 동적 선택 (`stock > 5` 필터)
+  - [x] 19.3 주문 전 장바구니 재확인 로직 추가
+  - [x] 19.4 최종 결과: checks 100%, http_req_failed 0%, p95 < 1000ms 모두 통과
+
+## Notes
+
+- `*` 표시 태스크는 선택적 테스트 태스크로 MVP 구현 시 건너뛸 수 있습니다
+- 각 태스크는 이전 태스크를 기반으로 빌드됩니다
+- 체크포인트에서 모든 테스트 통과 확인 후 다음 단계로 진행합니다
+- Property 테스트는 jqwik 라이브러리 사용, `@Property(tries = 100)` 어노테이션 필수
+- 각 Property 테스트 상단에 `// Feature: shopping-mall, Property {N}: {설명}` 주석 포함

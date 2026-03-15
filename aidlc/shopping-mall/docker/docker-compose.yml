@@ -1,0 +1,234 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: shopping-mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --init-connect='SET NAMES utf8mb4'
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_USER: shopuser
+      MYSQL_PASSWORD: shoppassword
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - shopping-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: shopping-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "12181:2181"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shopping-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: shopping-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_CREATE_TOPICS: "review-created:1:1"
+    ports:
+      - "19092:9092"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - shopping-network
+
+  shop-user:
+    build: ../shop-user
+    container_name: shopping-user
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shop_user?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: shopuser
+      SPRING_DATASOURCE_PASSWORD: shoppassword
+      JWT_SECRET: shopping-mall-jwt-secret-key-for-development-only
+    ports:
+      - "18083:8083"
+    networks:
+      - shopping-network
+
+  shop-product:
+    build: ../shop-product
+    container_name: shopping-product
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shop_product?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: shopuser
+      SPRING_DATASOURCE_PASSWORD: shoppassword
+    ports:
+      - "18081:8081"
+    networks:
+      - shopping-network
+
+  shop-order:
+    build: ../shop-order
+    container_name: shopping-order
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      shop-product:
+        condition: service_started
+      shop-user:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shop_order?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: shopuser
+      SPRING_DATASOURCE_PASSWORD: shoppassword
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PRODUCT_SERVICE_URL: http://shop-product:8081
+      JWT_SECRET: shopping-mall-jwt-secret-key-for-development-only
+    ports:
+      - "18082:8082"
+    networks:
+      - shopping-network
+
+  shop-review:
+    build: ../shop-review
+    container_name: shopping-review
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/shop_review?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      SPRING_DATASOURCE_USERNAME: shopuser
+      SPRING_DATASOURCE_PASSWORD: shoppassword
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "18084:8084"
+    networks:
+      - shopping-network
+
+  shop-frontend:
+    build: ../shop-frontend
+    container_name: shopping-frontend
+    depends_on:
+      - shop-user
+      - shop-product
+      - shop-order
+      - shop-review
+    ports:
+      - "13000:3000"
+    networks:
+      - shopping-network
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: shopping-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "19090:9090"
+    networks:
+      - shopping-network
+
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: shopping-alertmanager
+    profiles: ["alerting"]   # docker compose --profile alerting up 으로만 기동
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    ports:
+      - "19093:9093"
+    networks:
+      - shopping-network
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: shopping-loki
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "13100:3100"
+    networks:
+      - shopping-network
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: shopping-grafana
+    depends_on:
+      - prometheus
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_HTTP_PORT: 13001
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "13001:13001"
+    networks:
+      - shopping-network
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: shopping-promtail
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./loki/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - shopping-network
+
+volumes:
+  mysql_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+
+networks:
+  shopping-network:
+    driver: bridge

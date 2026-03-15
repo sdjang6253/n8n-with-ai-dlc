@@ -1,0 +1,27 @@
+# 민감 정보 - 절대 커밋 금지
+aidlc/shopping-mall/docker/alertmanager/alertmanager.yml
+
+# 환경변수 파일
+.env
+.env.local
+*.env
+
+# IDE
+.idea/
+*.iml
+.vscode/settings.json
+
+# Kiro IDE 개인 설정
+.kiro/settings/
+
+# Build outputs
+target/
+node_modules/
+dist/
+build/
+
+# Docker volumes (로컬 데이터)
+data/
+
+# 루트 k8s는 추후 추가 예정 (aidlc 하위 k8s는 포함)
+/k8s/

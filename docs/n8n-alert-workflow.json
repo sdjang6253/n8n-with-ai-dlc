@@ -1,0 +1,283 @@
+{
+  "name": "Slack Alert Investigation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-alert",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Slack Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.challenge ?? 'ok' }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\n// Slack URL verification challenge\nif (body.type === 'url_verification') {\n  return [{ json: { challenge: body.challenge, skip: true } }];\n}\n\n// Extract message from Slack event\nconst event = body.event;\nif (!event || event.type !== 'message' || event.subtype) {\n  return [{ json: { skip: true } }];\n}\n\nconst text = event.text || '';\n\n// Only process [FIRING] messages\nif (!text.startsWith('[FIRING')) {\n  return [{ json: { skip: true } }];\n}\n\n// Parse alert fields\nconst lines = text.split('\\n').map(l => l.trim());\n\n// Extract alertname from first line: [FIRING:1] AlertName ...\nconst firstLine = lines[0];\nconst alertNameMatch = firstLine.match(/\\[FIRING[^\\]]*\\]\\s+(\\S+)/);\nconst alertName = alertNameMatch ? alertNameMatch[1] : 'Unknown';\n\n// Extract severity\nconst severityMatch = text.match(/severity[:\\s•]+([\\w]+)/);\nconst severity = severityMatch ? severityMatch[1] : 'unknown';\n\n// Extract service/app name\nlet appName = '';\nconst serviceMatch = text.match(/Service:\\s*([\\w-]+)/);\nconst destAppMatch = text.match(/destination_app[:\\s•]+([\\w-]+)/);\nconst containerMatch = text.match(/container[:\\s•]+([\\w-]+)/);\nappName = serviceMatch?.[1] || destAppMatch?.[1] || containerMatch?.[1] || '';\n\n// Extract namespace from message or derive from appName\nlet namespace = '';\nconst nsMatch = text.match(/namespace[:\\s•]+([\\w-]+)/);\nif (nsMatch) {\n  namespace = nsMatch[1];\n} else if (appName) {\n  // Naming rule: prd-mall-backoffice -> prd-mall\n  const parts = appName.split('-');\n  namespace = parts.length >= 2 ? parts[0] + '-' + parts[1] : appName;\n}\n\n// Extract pod name\nconst podMatch = text.match(/pod[:\\s•]+([\\w-\\/]+)/);\nconst pod = podMatch ? podMatch[1].split('/').pop() : '';\n\n// Extract timestamp (use current time if not found)\nconst alertTimestamp = Math.floor(Date.now() / 1000);\nconst startTime = alertTimestamp - 600; // -10 min\nconst endTime = alertTimestamp + 600;   // +10 min\n\n// Classify alert type\nconst infraAlerts = ['OomKiller', 'CrashLoop', 'NodeNotReady', 'PodNotReady', 'DiskPressure', 'MemoryPressure'];\nconst isInfraAlert = infraAlerts.some(k => alertName.toLowerCase().includes(k.toLowerCase()));\nconst alertType = isInfraAlert ? 'infra' : 'service';\n\nreturn [{\n  json: {\n    skip: false,\n    raw: text,\n    channel: event.channel,\n    ts: event.ts,\n    alertName,\n    alertType,\n    appName,\n    namespace,\n    pod,\n    severity,\n    startTime: String(startTime * 1e9), // nanoseconds for Loki\n    endTime: String(endTime * 1e9),\n    startTimeMs: startTime,\n    endTimeMs: endTime,\n  }\n}];\n"
+      },
+      "id": "parse-message",
+      "name": "Parse Alert Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "filter-firing",
+      "name": "Is FIRING?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "agent": "toolsAgent",
+        "promptType": "define",
+        "text": "=You are an SRE AI assistant. Analyze the following Prometheus alert and investigate the root cause.\n\nAlert Information:\n- Alert Name: {{ $json.alertName }}\n- Alert Type: {{ $json.alertType }}\n- App/Service: {{ $json.appName }}\n- Namespace: {{ $json.namespace }}\n- Pod: {{ $json.pod }}\n- Severity: {{ $json.severity }}\n- Alert Time Range: {{ $json.startTimeMs }} ~ {{ $json.endTimeMs }} (unix seconds)\n- Raw Alert:\n{{ $json.raw }}\n\nInvestigation Strategy:\n\nIf alertType is 'service' (e.g., IstioHigh5xxErrorRate, high latency):\n1. Query Loki for error logs of the service in the alert time window\n2. Identify the most frequent error pattern\n3. Extract traceId from logs if available, then query Tempo\n4. Query Prometheus for relevant metrics (error rate, latency, request count)\n5. Based on error stack trace or file paths in logs, search GitHub for the source code\n6. Check recent commits/PRs on GitHub for the service\n7. Check recent GitLab changes for helm values of the service\n\nIf alertType is 'infra' (e.g., OOMKilled, CrashLoopBackOff):\n1. Query Prometheus for memory/CPU metrics of the pod\n2. Query Loki for pod logs around the alert time\n3. Check GitLab for resource limits in values.yaml\n4. Check GitHub for recent code changes if relevant\n\nProvide a structured analysis:\n## 🚨 Alert Summary\n## 🔍 Root Cause Analysis\n## 📊 Evidence\n## 💡 Recommended Actions\n",
+        "options": {
+          "systemMessage": "You are an expert SRE. Use the available tools to investigate alerts. Always query multiple data sources before concluding. Be concise and actionable."
+        }
+      },
+      "id": "ai-agent",
+      "name": "AI Investigation Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-pro",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "gemini-model",
+      "name": "Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [900, 480],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "REPLACE_GEMINI_CREDENTIAL_ID",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "query_loki_logs",
+        "description": "Query Loki for application logs. Use this to find error logs, stack traces, and traceIds for a service in a given time range.",
+        "method": "GET",
+        "url": "=http://LOKI_FQDN:3100/loki/api/v1/query_range",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "query", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('logql_query', 'LogQL query string, e.g. {app=\"prd-mall-backoffice\", namespace=\"prd-mall\"} |= \"error\"', 'string') }}" },
+            { "name": "start", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_time_ns', 'Start time in nanoseconds', 'string') }}" },
+            { "name": "end", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('end_time_ns', 'End time in nanoseconds', 'string') }}" },
+            { "name": "limit", "value": "100" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-loki",
+      "name": "Tool: Loki",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [680, 520]
+    },
+    {
+      "parameters": {
+        "name": "query_prometheus_metrics",
+        "description": "Query Prometheus for metrics. Use this to check error rates, latency, memory usage, CPU, pod restarts, etc. Generate appropriate PromQL based on the alert type.",
+        "method": "GET",
+        "url": "=http://PROMETHEUS_FQDN:9090/api/v1/query_range",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "query", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('promql', 'PromQL expression appropriate for the alert type', 'string') }}" },
+            { "name": "start", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_unix', 'Start time in unix seconds', 'string') }}" },
+            { "name": "end", "value": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('end_unix', 'End time in unix seconds', 'string') }}" },
+            { "name": "step", "value": "60" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-prometheus",
+      "name": "Tool: Prometheus",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [800, 520]
+    },
+    {
+      "parameters": {
+        "name": "query_tempo_trace",
+        "description": "Query Tempo for distributed traces using a traceId extracted from Loki logs.",
+        "method": "GET",
+        "url": "=http://TEMPO_FQDN:3200/api/traces/{{ /*n8n-auto-generated-fromAI-override*/ $fromAI('trace_id', 'The traceId to look up', 'string') }}",
+        "options": {}
+      },
+      "id": "tool-tempo",
+      "name": "Tool: Tempo",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [920, 520]
+    },
+    {
+      "parameters": {
+        "name": "search_github",
+        "description": "Search GitHub repositories or get file contents and recent commits. Use to find source code related to errors found in logs.",
+        "method": "GET",
+        "url": "=https://api.github.com/{{ /*n8n-auto-generated-fromAI-override*/ $fromAI('api_path', 'GitHub API path, e.g. search/repositories?q=service-name or repos/org/repo/commits or repos/org/repo/contents/path/to/file', 'string') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer GITHUB_PAT_TOKEN" },
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-github",
+      "name": "Tool: GitHub",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1040, 520]
+    },
+    {
+      "parameters": {
+        "name": "search_gitlab",
+        "description": "Search GitLab projects or get file contents and recent commits. Use to check helm values.yaml, infrastructure changes, and recent deployments.",
+        "method": "GET",
+        "url": "=http://GITLAB_HOST/api/v4/{{ /*n8n-auto-generated-fromAI-override*/ $fromAI('api_path', 'GitLab API path, e.g. projects?search=service-name or projects/123/repository/commits or projects/123/repository/files/values.yaml/raw', 'string') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "PRIVATE-TOKEN", "value": "GITLAB_ACCESS_TOKEN" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "tool-gitlab",
+      "name": "Tool: GitLab",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1160, 520]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "message",
+        "operation": "post",
+        "channel": "={{ $('Parse Alert Message').item.json.channel }}",
+        "text": "={{ $json.output }}",
+        "otherOptions": {
+          "thread_ts": "={{ $('Parse Alert Message').item.json.ts }}"
+        }
+      },
+      "id": "slack-reply",
+      "name": "Slack Reply",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1120, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_SLACK_CREDENTIAL_ID",
+          "name": "Slack OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Slack Webhook": {
+      "main": [
+        [
+          { "node": "Webhook Response", "type": "main", "index": 0 },
+          { "node": "Parse Alert Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse Alert Message": {
+      "main": [
+        [{ "node": "Is FIRING?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is FIRING?": {
+      "main": [
+        [],
+        [{ "node": "AI Investigation Agent", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Investigation Agent": {
+      "main": [
+        [{ "node": "Slack Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gemini Model": {
+      "ai_languageModel": [
+        [{ "node": "AI Investigation Agent", "type": "ai_languageModel", "index": 0 }]
+      ]
+    },
+    "Tool: Loki": {
+      "ai_tool": [
+        [{ "node": "AI Investigation Agent", "type": "ai_tool", "index": 0 }]
+      ]
+    },
+    "Tool: Prometheus": {
+      "ai_tool": [
+        [{ "node": "AI Investigation Agent", "type": "ai_tool", "index": 0 }]
+      ]
+    },
+    "Tool: Tempo": {
+      "ai_tool": [
+        [{ "node": "AI Investigation Agent", "type": "ai_tool", "index": 0 }]
+      ]
+    },
+    "Tool: GitHub": {
+      "ai_tool": [
+        [{ "node": "AI Investigation Agent", "type": "ai_tool", "index": 0 }]
+      ]
+    },
+    "Tool: GitLab": {
+      "ai_tool": [
+        [{ "node": "AI Investigation Agent", "type": "ai_tool", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {}
+}

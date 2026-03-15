@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - "rules/alerts.yml"
+
+scrape_configs:
+  - job_name: 'shop-user'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['shop-user:8083']
+        labels:
+          service: 'shop-user'
+
+  - job_name: 'shop-product'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['shop-product:8081']
+        labels:
+          service: 'shop-product'
+
+  - job_name: 'shop-order'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['shop-order:8082']
+        labels:
+          service: 'shop-order'
+
+  - job_name: 'shop-review'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['shop-review:8084']
+        labels:
+          service: 'shop-review'
