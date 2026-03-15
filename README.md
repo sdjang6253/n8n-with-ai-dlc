@@ -74,12 +74,19 @@ docker compose --profile alerting up --build -d
 ### 빠른 시작 — Kubernetes
 
 ```bash
+# Linux / macOS
 cd aidlc/shopping-mall/k8s
 bash deploy.sh
 
 # port-forward로 접근
 kubectl port-forward svc/shop-frontend 13000:13000 -n shopping-mall
 kubectl port-forward svc/grafana 13001:13001 -n shopping-mall
+```
+
+```powershell
+# Windows PowerShell
+cd aidlc\shopping-mall\k8s
+.\deploy.ps1
 ```
 
 ### 접속 URL

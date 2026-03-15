@@ -112,9 +112,8 @@ docker compose down -v
 사전 요구사항: Docker Desktop + Kubernetes 활성화, kubectl CLI
 
 ```bash
+# Linux / macOS
 cd aidlc/shopping-mall/k8s
-
-# 배포 (이미지 빌드 + 전체 리소스 적용)
 bash deploy.sh
 
 # 상태 확인
@@ -124,6 +123,17 @@ kubectl get svc -n shopping-mall
 # 전체 삭제
 bash teardown.sh
 ```
+
+```powershell
+# Windows PowerShell
+cd aidlc\shopping-mall\k8s
+.\deploy.ps1
+
+# 전체 삭제
+.\teardown.ps1
+```
+
+> PowerShell 실행 정책 오류 시: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 모든 서비스가 ClusterIP로 구성되어 있습니다. cloudflared 터널 또는 port-forward로 접근합니다.
 

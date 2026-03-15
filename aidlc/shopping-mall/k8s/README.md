@@ -11,31 +11,27 @@ plain YAML 매니페스트로 구성되어 있으며, Helm 없이 `kubectl apply
 
 ## 빠른 시작
 
+### Linux / macOS (bash)
+
 ```bash
 cd aidlc/shopping-mall/k8s
 bash deploy.sh
+
+# 전체 삭제
+bash teardown.sh
 ```
 
-Windows에서 bash의 kubectl context가 다를 경우, PowerShell에서 deploy.sh의 명령을 직접 실행합니다:
+### Windows (PowerShell)
 
 ```powershell
 cd aidlc\shopping-mall\k8s
-kubectl apply -f base\namespace.yaml
-kubectl apply -f base\secrets.yaml
-kubectl create configmap mysql-init-scripts --from-file=01-schema.sql=..\docker\mysql\init\01-schema.sql --from-file=02-seed.sql=..\docker\mysql\init\02-seed.sql -n shopping-mall --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f monitoring\configmap-prometheus.yaml -f monitoring\configmap-grafana.yaml -f monitoring\configmap-loki.yaml
-docker build -t shopping-mall-shop-user:latest ..\shop-user\
-docker build -t shopping-mall-shop-product:latest ..\shop-product\
-docker build -t shopping-mall-shop-order:latest ..\shop-order\
-docker build -t shopping-mall-shop-review:latest ..\shop-review\
-docker build -t shopping-mall-shop-frontend:latest ..\shop-frontend\
-kubectl apply -f infra\mysql.yaml -f infra\zookeeper.yaml
-kubectl wait --for=condition=ready pod -l app=mysql -n shopping-mall --timeout=120s
-kubectl apply -f infra\kafka.yaml
-kubectl wait --for=condition=ready pod -l app=kafka -n shopping-mall --timeout=120s
-kubectl apply -f apps\shop-user.yaml -f apps\shop-product.yaml -f apps\shop-review.yaml -f apps\shop-order.yaml -f apps\shop-frontend.yaml
-kubectl apply -f monitoring\prometheus.yaml -f monitoring\loki.yaml -f monitoring\grafana.yaml
+.\deploy.ps1
+
+# 전체 삭제
+.\teardown.ps1
 ```
+
+> PowerShell 실행 정책 오류 시: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
 `deploy.sh`가 수행하는 작업:
 1. `shopping-mall` 네임스페이스 + Secret 생성
