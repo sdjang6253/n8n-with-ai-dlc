@@ -83,10 +83,13 @@ kubectl port-forward svc/shop-order 18082:18082 -n shopping-mall &
 kubectl port-forward svc/shop-review 18084:18084 -n shopping-mall &
 
 # 2. k6 시나리오 실행 (aidlc/shopping-mall 기준)
-k6 run docker/k6/scenarios/01-normal-flow.js
-k6 run docker/k6/scenarios/02-error-spike.js
-k6 run -e SERVICE=http://localhost:18081 docker/k6/scenarios/03-memory-load.js
-k6 run docker/k6/scenarios/04-latency-spike.js
+bash k6/run-01-normal-flow.sh
+bash k6/run-02-error-spike.sh
+bash k6/run-03-memory-load.sh
+bash k6/run-04-latency-spike.sh
+
+# 다른 서비스 대상으로 메모리 부하 테스트
+SERVICE=http://localhost:18082 bash k6/run-03-memory-load.sh
 ```
 
 ## 상태 확인

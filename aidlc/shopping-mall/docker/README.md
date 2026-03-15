@@ -26,12 +26,12 @@ docker compose up --build -d
 | shop-order | 18082 | 8082 |
 | shop-review | 18084 | 8084 |
 | MySQL | 13306 | 3306 |
-| Zookeeper | 12181 | 2181 |
+| Zookeeper | 12190 | 2181 |
 | Kafka | 19092 | 9092 |
 | Prometheus | 19090 | 9090 |
 | AlertManager | 19093 | 9093 |
 | Loki | 13100 | 3100 |
-| Grafana | 13001 | 13001 |
+| Grafana | 13001 | 3000 |
 
 ## 접속 URL
 
@@ -97,13 +97,6 @@ docker/
 │   │   └── shopping-mall.json
 │   └── datasources/
 │       └── datasources.yml
-├── k6/
-│   ├── lib/auth.js
-│   └── scenarios/
-│       ├── 01-normal-flow.js
-│       ├── 02-error-spike.js
-│       ├── 03-memory-load.js
-│       └── 04-latency-spike.js
 ├── loki/
 │   ├── loki-config.yml
 │   └── promtail-config.yml
@@ -114,3 +107,5 @@ docker/
     ├── prometheus.yml
     └── rules/alerts.yml
 ```
+
+k6 시나리오는 `../k6/` 에 위치합니다. 실행 방법은 [aidlc/README.md](../../../README.md) 참고.

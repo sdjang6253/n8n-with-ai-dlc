@@ -20,13 +20,19 @@ aidlc/shopping-mall/
 │   ├── prometheus/      # prometheus.yml + 알람 규칙
 │   ├── loki/            # loki-config.yml + promtail-config.yml
 │   ├── grafana/         # 대시보드 프로비저닝
-│   ├── alertmanager/    # alertmanager.yml (gitignore — 직접 작성 필요)
-│   └── k6/              # 부하 테스트 시나리오
-└── k8s/                 # Kubernetes 매니페스트
-    ├── base/            # namespace, secrets
-    ├── infra/           # MySQL, Zookeeper, Kafka
-    ├── apps/            # 5개 서비스
-    └── monitoring/      # Prometheus, Loki, Grafana
+│   └── alertmanager/    # alertmanager.yml (gitignore — 직접 작성 필요)
+├── k8s/                 # Kubernetes 매니페스트
+│   ├── base/            # namespace, secrets
+│   ├── infra/           # MySQL, Zookeeper, Kafka
+│   ├── apps/            # 5개 서비스
+│   └── monitoring/      # Prometheus, Loki, Grafana
+└── k6/                  # 부하 테스트 시나리오
+    ├── lib/auth.js
+    ├── scenarios/       # 시나리오 4개
+    ├── run-01-normal-flow.sh
+    ├── run-02-error-spike.sh
+    ├── run-03-memory-load.sh
+    └── run-04-latency-spike.sh
 ```
 
 ---
@@ -233,16 +239,18 @@ curl http://localhost:18081/simulate/memory
 
 ```bash
 # 정상 플로우 (로그인 → 상품 조회 → 장바구니 → 주문 → 리뷰)
-k6 run docker/k6/scenarios/01-normal-flow.js
+bash k6/run-01-normal-flow.sh
 
 # 에러 스파이크 → IstioHigh5xxErrorRate 알람 재현
-k6 run docker/k6/scenarios/02-error-spike.js
+bash k6/run-02-error-spike.sh
 
-# 메모리 부하 → HighMemoryUsage 알람 재현
-k6 run -e SERVICE=http://localhost:18081 docker/k6/scenarios/03-memory-load.js
+# 메모리 부하 → HighMemoryUsage 알람 재현 (기본: shop-product)
+bash k6/run-03-memory-load.sh
+# 다른 서비스 지정
+bash k6/run-03-memory-load.sh http://localhost:18082
 
 # 레이턴시 스파이크 → HighLatency 알람 재현
-k6 run docker/k6/scenarios/04-latency-spike.js
+bash k6/run-04-latency-spike.sh
 ```
 
 ---

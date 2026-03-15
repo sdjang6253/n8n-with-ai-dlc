@@ -109,16 +109,18 @@ curl http://localhost:18081/simulate/memory
 
 ```bash
 # 정상 플로우
-k6 run aidlc/shopping-mall/k6/scenarios/01-normal-flow.js
+bash aidlc/shopping-mall/k6/run-01-normal-flow.sh
 
 # 에러 스파이크 (IstioHigh5xxErrorRate 알람 재현)
-k6 run aidlc/shopping-mall/k6/scenarios/02-error-spike.js
+bash aidlc/shopping-mall/k6/run-02-error-spike.sh
 
 # 메모리 부하 (HighMemoryUsage 알람 재현)
-k6 run -e SERVICE=http://localhost:18081 aidlc/shopping-mall/k6/scenarios/03-memory-load.js
+bash aidlc/shopping-mall/k6/run-03-memory-load.sh
+# 다른 서비스 지정
+SERVICE=http://localhost:18082 bash aidlc/shopping-mall/k6/run-03-memory-load.sh
 
 # 레이턴시 스파이크 (HighLatency 알람 재현)
-k6 run aidlc/shopping-mall/k6/scenarios/04-latency-spike.js
+bash aidlc/shopping-mall/k6/run-04-latency-spike.sh
 ```
 
 자세한 내용은 [aidlc/README.md](./aidlc/README.md) 참고.
