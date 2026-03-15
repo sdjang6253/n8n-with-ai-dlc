@@ -4,6 +4,13 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# .env 로드 (존재하는 경우)
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
 k6 run \
   -e USER_SERVICE="${USER_SERVICE:-http://localhost:18083}" \
   -e PRODUCT_SERVICE="${PRODUCT_SERVICE:-http://localhost:18081}" \

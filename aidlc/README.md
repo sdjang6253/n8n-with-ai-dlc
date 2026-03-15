@@ -237,6 +237,29 @@ curl http://localhost:18081/simulate/memory
 
 ## k6 부하 테스트
 
+서비스 URL은 `k6/.env` 파일로 관리합니다 (git 제외).
+
+```bash
+# 1. 환경 설정 (최초 1회)
+cp k6/.env.example k6/.env
+# k6/.env 에서 실제 URL 수정 (localhost 또는 도메인)
+```
+
+`k6/.env` 예시:
+```bash
+# Docker Compose (localhost)
+USER_SERVICE=http://localhost:18083
+PRODUCT_SERVICE=http://localhost:18081
+ORDER_SERVICE=http://localhost:18082
+REVIEW_SERVICE=http://localhost:18084
+
+# Cloudflare Tunnel 도메인 사용 시
+# USER_SERVICE=https://user.yourdomain.com
+# PRODUCT_SERVICE=https://product.yourdomain.com
+# ORDER_SERVICE=https://order.yourdomain.com
+# REVIEW_SERVICE=https://review.yourdomain.com
+```
+
 ```bash
 # 정상 플로우 (로그인 → 상품 조회 → 장바구니 → 주문 → 리뷰)
 bash k6/run-01-normal-flow.sh
@@ -244,14 +267,16 @@ bash k6/run-01-normal-flow.sh
 # 에러 스파이크 → IstioHigh5xxErrorRate 알람 재현
 bash k6/run-02-error-spike.sh
 
-# 메모리 부하 → HighMemoryUsage 알람 재현 (기본: shop-product)
+# 메모리 부하 → HighMemoryUsage 알람 재현 (기본: PRODUCT_SERVICE)
 bash k6/run-03-memory-load.sh
-# 다른 서비스 지정
+# 다른 서비스 지정 (인자 우선)
 bash k6/run-03-memory-load.sh http://localhost:18082
 
 # 레이턴시 스파이크 → HighLatency 알람 재현
 bash k6/run-04-latency-spike.sh
 ```
+
+> `.env`가 없으면 localhost 기본값으로 동작합니다.
 
 ---
 

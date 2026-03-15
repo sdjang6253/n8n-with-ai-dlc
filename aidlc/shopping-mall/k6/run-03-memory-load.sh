@@ -5,7 +5,16 @@
 #   예시: bash run-03-memory-load.sh http://localhost:18082
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="${1:-${SERVICE:-http://localhost:18081}}"
+
+# .env 로드 (존재하는 경우)
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
+# 인자 > SERVICE 환경변수 > PRODUCT_SERVICE > 기본값 순으로 우선순위
+TARGET="${1:-${SERVICE:-${PRODUCT_SERVICE:-http://localhost:18081}}}"
 
 echo "대상 서비스: $TARGET"
 
