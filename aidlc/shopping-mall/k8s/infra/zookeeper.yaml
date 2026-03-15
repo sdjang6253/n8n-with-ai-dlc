@@ -40,5 +40,5 @@ spec:
   selector:
     app: zookeeper
   ports:
-    - port: 12181
+    - port: 12190
       targetPort: 2181

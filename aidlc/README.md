@@ -57,7 +57,7 @@ aidlc/shopping-mall/
 | shop-order | **18082** | 8082 | 장바구니 / 주문 / 리뷰 Kafka Producer |
 | shop-review | **18084** | 8084 | 리뷰 Kafka Consumer / 조회 |
 | MySQL | **13306** | 3306 | 4개 DB |
-| Zookeeper | **12181** | 2181 | Kafka 코디네이터 |
+| Zookeeper | **12190** | 2181 | Kafka 코디네이터 |
 | Kafka | **19092** | 9092 | 메시지 브로커 |
 | Prometheus | **19090** | 9090 | 메트릭 수집 |
 | Loki | **13100** | 3100 | 로그 수집 |

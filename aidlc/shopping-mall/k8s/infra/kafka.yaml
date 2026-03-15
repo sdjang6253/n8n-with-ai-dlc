@@ -23,7 +23,7 @@ spec:
             - name: KAFKA_BROKER_ID
               value: "1"
             - name: KAFKA_ZOOKEEPER_CONNECT
-              value: "zookeeper:12181"
+              value: "zookeeper:12190"
             - name: KAFKA_ADVERTISED_LISTENERS
               value: "PLAINTEXT://kafka:19092"
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
