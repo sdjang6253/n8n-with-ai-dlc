@@ -61,7 +61,7 @@ Cloudflare Tunnel
 | Loki | 13100 | 로그 수집 |
 | Grafana | 13001 | 대시보드 (admin / admin) |
 
-### 빠른 시작
+### 빠른 시작 — Docker Compose
 
 ```bash
 cd aidlc/shopping-mall/docker
@@ -69,6 +69,17 @@ docker compose up --build -d
 
 # AlertManager(Slack 알림) 포함
 docker compose --profile alerting up --build -d
+```
+
+### 빠른 시작 — Kubernetes
+
+```bash
+cd aidlc/shopping-mall/k8s
+bash deploy.sh
+
+# port-forward로 접근
+kubectl port-forward svc/shop-frontend 13000:13000 -n shopping-mall
+kubectl port-forward svc/grafana 13001:13001 -n shopping-mall
 ```
 
 ### 접속 URL
