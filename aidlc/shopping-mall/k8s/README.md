@@ -71,6 +71,24 @@ kubectl port-forward svc/shop-review 18084:18084 -n shopping-mall
 | Grafana | http://localhost:13001 (admin / admin) |
 | Prometheus | http://localhost:19090 |
 
+## k6 부하 테스트
+
+k6는 클러스터 외부(로컬)에서 실행합니다. port-forward로 서비스를 열어두고 시나리오를 실행하면 됩니다.
+
+```bash
+# 1. 백엔드 port-forward (별도 터미널에서 실행)
+kubectl port-forward svc/shop-user 18083:18083 -n shopping-mall &
+kubectl port-forward svc/shop-product 18081:18081 -n shopping-mall &
+kubectl port-forward svc/shop-order 18082:18082 -n shopping-mall &
+kubectl port-forward svc/shop-review 18084:18084 -n shopping-mall &
+
+# 2. k6 시나리오 실행 (aidlc/shopping-mall 기준)
+k6 run docker/k6/scenarios/01-normal-flow.js
+k6 run docker/k6/scenarios/02-error-spike.js
+k6 run -e SERVICE=http://localhost:18081 docker/k6/scenarios/03-memory-load.js
+k6 run docker/k6/scenarios/04-latency-spike.js
+```
+
 ## 상태 확인
 
 ```bash
